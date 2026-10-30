@@ -133,6 +133,32 @@ public abstract class AbstractTestAzureBlobFileSystemExchangeStorage
     }
 
     @Test
+    void testCreateEmptyFileOverwritesExistingFile()
+    {
+        URI fileUri = fileUri("create-empty-file-overwrite-dir/empty-file");
+        getFutureValue(storage.createEmptyFile(fileUri));
+        getFutureValue(storage.createEmptyFile(fileUri));
+
+        List<FileStatus> files = getFutureValue(storage.listFilesRecursively(directoryUri("create-empty-file-overwrite-dir/")));
+        assertThat(files).hasSize(1);
+    }
+
+    @Test
+    void testWriteOverwritesExistingFile()
+    {
+        URI fileUri = fileUri("write-overwrite-dir/test-file");
+        for (String data : List.of("first", "second-data")) {
+            ExchangeStorageWriter writer = storage.createExchangeStorageWriter(fileUri);
+            getFutureValue(writer.write(Slices.utf8Slice(data)));
+            getFutureValue(writer.finish());
+        }
+
+        List<FileStatus> files = getFutureValue(storage.listFilesRecursively(directoryUri("write-overwrite-dir/")));
+        assertThat(files).hasSize(1);
+        assertThat(files.getFirst().getFileSize()).isEqualTo("second-data".length());
+    }
+
+    @Test
     void testWriteAndListFiles()
     {
         URI fileUri = fileUri("test-dir/test-file");

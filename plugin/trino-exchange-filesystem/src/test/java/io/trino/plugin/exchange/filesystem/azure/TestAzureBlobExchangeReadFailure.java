@@ -151,7 +151,7 @@ public class TestAzureBlobExchangeReadFailure
                 .buildAsyncClient();
     }
 
-    private static class StatusOnlyResponse
+    static class StatusOnlyResponse
             extends HttpResponse
     {
         private final int statusCode;
