@@ -44,6 +44,7 @@ import com.azure.storage.file.datalake.models.DataLakeStorageException;
 import com.azure.storage.file.datalake.models.ListPathsOptions;
 import com.azure.storage.file.datalake.models.PathItem;
 import com.azure.storage.file.datalake.options.DataLakePathDeleteOptions;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CharMatcher;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -700,7 +701,8 @@ public class AzureFileSystem
         return createBlobContainerClient(location, key).getBlobClient(location.path());
     }
 
-    private BlobContainerClient createBlobContainerClient(AzureLocation location, Optional<EncryptionKey> key)
+    @VisibleForTesting
+    BlobContainerClient createBlobContainerClient(AzureLocation location, Optional<EncryptionKey> key)
     {
         requireNonNull(location, "location is null");
 
@@ -717,7 +719,8 @@ public class AzureFileSystem
         return builder.buildClient();
     }
 
-    private DataLakeFileSystemClient createFileSystemClient(AzureLocation location, Optional<EncryptionKey> key)
+    @VisibleForTesting
+    DataLakeFileSystemClient createFileSystemClient(AzureLocation location, Optional<EncryptionKey> key)
     {
         requireNonNull(location, "location is null");
 
