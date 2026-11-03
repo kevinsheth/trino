@@ -18,8 +18,8 @@ import com.azure.core.http.HttpHeaderName;
 import com.azure.core.http.HttpMethod;
 import com.azure.core.http.HttpRequest;
 import com.azure.core.http.HttpResponse;
+import com.azure.storage.blob.BlobAsyncClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
-import com.azure.storage.blob.specialized.BlockBlobAsyncClient;
 import com.azure.storage.common.policy.RequestRetryOptions;
 import com.azure.storage.common.policy.RetryPolicyType;
 import io.airlift.slice.Slices;
@@ -33,6 +33,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import static io.airlift.concurrent.MoreFutures.getFutureValue;
+import static io.trino.plugin.exchange.filesystem.azure.AzureBlobFileSystemExchangeStorage.createEmptyBlob;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestAzureBlobExchangeWriterRetry
@@ -42,20 +43,30 @@ public class TestAzureBlobExchangeWriterRetry
     @Test
     public void testDirectUploadRetryAfterLostResponse()
     {
-        LostFirstResponseServer server = new LostFirstResponseServer();
-        ExchangeStorageWriter writer = new AzureExchangeStorageWriter(server.blockBlobClient(), BLOCK_SIZE);
-        getFutureValue(writer.write(Slices.utf8Slice("abc")));
-        getFutureValue(writer.finish());
-        assertThat(server.committedBlobs).hasSize(1);
+        assertWriteSurvivesLostResponse("abc");
     }
 
     @Test
     public void testCommitBlockListRetryAfterLostResponse()
     {
+        assertWriteSurvivesLostResponse("abcdefgh", "ijklmnop");
+    }
+
+    @Test
+    public void testCreateEmptyFileRetryAfterLostResponse()
+    {
         LostFirstResponseServer server = new LostFirstResponseServer();
-        ExchangeStorageWriter writer = new AzureExchangeStorageWriter(server.blockBlobClient(), BLOCK_SIZE);
-        getFutureValue(writer.write(Slices.utf8Slice("abcdefgh")));
-        getFutureValue(writer.write(Slices.utf8Slice("ijklmnop")));
+        getFutureValue(createEmptyBlob(server.blobClient()));
+        assertThat(server.committedBlobs).hasSize(1);
+    }
+
+    private static void assertWriteSurvivesLostResponse(String... chunks)
+    {
+        LostFirstResponseServer server = new LostFirstResponseServer();
+        ExchangeStorageWriter writer = new AzureExchangeStorageWriter(server.blobClient().getBlockBlobAsyncClient(), BLOCK_SIZE);
+        for (String chunk : chunks) {
+            getFutureValue(writer.write(Slices.utf8Slice(chunk)));
+        }
         getFutureValue(writer.finish());
         assertThat(server.committedBlobs).hasSize(1);
     }
@@ -68,7 +79,7 @@ public class TestAzureBlobExchangeWriterRetry
     {
         private final Set<String> committedBlobs = new HashSet<>();
 
-        BlockBlobAsyncClient blockBlobClient()
+        BlobAsyncClient blobClient()
         {
             HttpClient httpClient = this::send;
             return new BlobServiceClientBuilder()
@@ -77,18 +88,20 @@ public class TestAzureBlobExchangeWriterRetry
                     .retryOptions(new RequestRetryOptions(RetryPolicyType.FIXED, 2, (Integer) null, 1L, 1L, null))
                     .buildAsyncClient()
                     .getBlobContainerAsyncClient("container")
-                    .getBlobAsyncClient("exchange/0_0.data")
-                    .getBlockBlobAsyncClient();
+                    .getBlobAsyncClient("exchange/0_0.data");
         }
 
         private synchronized Mono<HttpResponse> send(HttpRequest request)
         {
             String query = request.getUrl().getQuery();
             boolean stageBlock = query != null && query.contains("blockid=");
+            String blob = request.getUrl().getPath();
+            if (request.getHttpMethod() == HttpMethod.HEAD) {
+                return Mono.just(new StatusOnlyResponse(request, committedBlobs.contains(blob) ? 200 : 404));
+            }
             if (request.getHttpMethod() != HttpMethod.PUT || stageBlock) {
                 return Mono.just(new StatusOnlyResponse(request, 201));
             }
-            String blob = request.getUrl().getPath();
             if (committedBlobs.contains(blob)) {
                 if ("*".equals(request.getHeaders().getValue(HttpHeaderName.IF_NONE_MATCH))) {
                     return Mono.just(new StatusOnlyResponse(request, 409));

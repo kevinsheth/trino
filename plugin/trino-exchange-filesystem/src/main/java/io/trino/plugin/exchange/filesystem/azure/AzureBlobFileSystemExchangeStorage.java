@@ -18,6 +18,7 @@ import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
 import com.azure.core.http.rest.PagedResponse;
 import com.azure.core.util.BinaryData;
 import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.azure.storage.blob.BlobAsyncClient;
 import com.azure.storage.blob.BlobContainerAsyncClient;
 import com.azure.storage.blob.BlobServiceAsyncClient;
 import com.azure.storage.blob.BlobServiceClient;
@@ -247,11 +248,14 @@ public class AzureBlobFileSystemExchangeStorage
         verifyUri(file);
         String containerName = getContainerName(file);
         String blobName = getPath(file);
-        return translateFailures(toListenableFuture(blobServiceAsyncClient
+        return createEmptyBlob(blobServiceAsyncClient
                 .getBlobContainerAsyncClient(containerName)
-                .getBlobAsyncClient(blobName)
-                .upload(BinaryData.fromString(""), true)
-                .toFuture()));
+                .getBlobAsyncClient(blobName));
+    }
+
+    static ListenableFuture<Void> createEmptyBlob(BlobAsyncClient blobClient)
+    {
+        return translateFailures(toListenableFuture(blobClient.upload(BinaryData.fromString(""), true).toFuture()));
     }
 
     @Override
